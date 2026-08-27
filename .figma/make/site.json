@@ -1,0 +1,10 @@
+{
+  "description": "Creates a professional, user-friendly website tailored to showcase your content and engage visitors effectively across devices.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

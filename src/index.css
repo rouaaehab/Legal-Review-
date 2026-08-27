@@ -1,0 +1,121 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+/* The app is single-theme (light only). Pin `color-scheme: light` on
+   the root so the browser's UA stylesheet — form controls, default
+   <input> backgrounds, scrollbar colors, the autofill yellow box,
+   native date pickers, etc. — does NOT switch to dark just because
+   the user's OS or browser is in dark mode. The project has no
+   `prefers-color-scheme` media queries of its own, so the dark-mode
+   bleed comes entirely from the UA. This declaration pins the UA
+   back to light. */
+:root {
+  color-scheme: light;
+}
+html, body {
+  color-scheme: light;
+  background-color: #FAFAF8;
+}
+
+@theme {
+  --color-navy: #1B2A4A;
+  --color-navy-light: #243558;
+  --color-navy-dark: #132036;
+  --color-gold: #B8935F;
+  --color-gold-light: #C9A878;
+  --color-offwhite: #FAFAF8;
+  --color-charcoal: #2E2E2E;
+  --color-muted: #6B7280;
+  --color-border: #E5E3DE;
+  --color-surface: #F4F3F0;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #FAFAF8;
+  color: #2E2E2E;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D1CFC9;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B8B5AE;
+}
+
+/* Table row hover */
+.table-row-hover:hover {
+  background-color: #F4F3F0;
+}
+
+/* Sidebar active */
+.sidebar-active {
+  background-color: rgba(184, 147, 95, 0.12);
+  color: #B8935F;
+}
+
+.sidebar-active svg {
+  color: #B8935F;
+}
+
+/* Printable documents (invoice / delivery order) — everything else in the
+   app (sidebar, buttons, breadcrumbs) is hidden; only the element carrying
+   .printable-document is shown, unscaled, starting at the page's top-left.
+   This is what makes "Print" and "Export PDF" (via the browser's own
+   Save-as-PDF print destination) output the actual on-screen document
+   instead of a screenshot of the whole app shell. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-document,
+  .printable-document * {
+    visibility: visible;
+  }
+  .printable-document {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  /* Without this, browsers silently drop background colors/images when
+     printing — the blue top bar, the PARTICULARS table header, and the
+     black TOTAL bars would all print as plain white otherwise. This
+     forces them to render exactly as shown on screen. */
+  .printable-document,
+  .printable-document * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  @page {
+    margin: 12mm;
+  }
+}
