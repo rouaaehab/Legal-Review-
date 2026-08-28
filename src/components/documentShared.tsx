@@ -1,5 +1,6 @@
 import { COMPANY, EDITORIAL_BOARD, BRAND_BLUE } from '../data/companyInfo'
 import logoUrl from '../assets/legal-review-logo.png'
+const productionLogoUrl = '/legal-review-logo.png'
 
 // The thick brand-blue bar across the very top of every printed document —
 // present on both the real invoice and delivery order templates, above the
@@ -39,7 +40,7 @@ export function DocumentLetterhead() {
           <p className="font-semibold mt-0.5" style={{ color: '#1B2A4A' }}>Phone: {COMPANY.phone}</p>
           <p className="font-semibold" style={{ color: '#1B2A4A' }}>Fax: {COMPANY.fax}</p>
         </div>
-        <img src={logoUrl} alt="The Legal Review" style={{ width: 210, height: 'auto', flexShrink: 0, marginTop: 2 }} />
+        <img src={productionLogoUrl} alt="The Legal Review" style={{ width: 210, height: 'auto', flexShrink: 0, marginTop: 2 }} />
       </div>
     </div>
   )

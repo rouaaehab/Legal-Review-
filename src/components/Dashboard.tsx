@@ -19,7 +19,11 @@ export default function Dashboard({ user, navigate }: Props) {
   // Recomputed on every render from the live invoices/deliveryOrders
   // arrays. A new invoice or DO appears in the chart on the next render
   // without any refresh step.
-  const monthlySales = computeMonthlySales()
+  const currentYear = new Date().getFullYear()
+const monthlySales = computeMonthlySales(
+  `${currentYear}-01-01`,
+  `${currentYear}-12-31`
+)
 
   // ── Due-now panel ───────────────────────────────────────────────────
   // Reads the SQL view once on mount. Sorts overdue first, then by
