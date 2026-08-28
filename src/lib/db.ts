@@ -263,6 +263,7 @@ export async function updateCustomerDb(id: string, patch: Partial<Customer>): Pr
   if (patch.status !== undefined) payload.status = patch.status
   if (patch.address !== undefined) payload.address = patch.address
   if (patch.tel !== undefined) payload.tel = patch.tel
+  if (patch.invoiceNo !== undefined) payload.invoice_no = patch.invoiceNo
   const { error } = await supabase.from('customers').update(payload).eq('id', id)
   if (error) throw error
 }

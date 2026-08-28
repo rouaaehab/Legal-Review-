@@ -433,7 +433,7 @@ export default function BookManagement({ user }: Props) {
     MLRA: 'Malaysian Law Review (Appellate Court)',
     MLRH: 'Malaysian Law Review (High Court)',
     MELR: 'Malaysian Employment Law Reports',
-    TCLR: 'The Capital Law Review',
+    TCLR: 'The Commonwealth Law Review',
     SSLR: 'Sultan Sharafuddin Law Review',
   }
  

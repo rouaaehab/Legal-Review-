@@ -20,7 +20,7 @@ export default function CustomerList({ user, navigate }: Props) {
   const [statusFilter, setStatusFilter] = useState('All Status')
   const [showAdd, setShowAdd] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ company: '', pic: 'Syed', contact: '', tin: '', brn: '', period: '', status: 'Active' as typeof CUSTOMER_STATUSES[number], address: '', tel: '' })
+  const [form, setForm] = useState({ invoiceNo: '', company: '', pic: 'Syed', contact: '', tin: '', brn: '', period: '', status: 'Active' as typeof CUSTOMER_STATUSES[number], address: '', tel: '' })
 
   const filtered = customers.filter(c => {
     const q = search.toLowerCase()
@@ -33,16 +33,16 @@ export default function CustomerList({ user, navigate }: Props) {
   })
 
   const handleAdd = async () => {
-    if (!form.company.trim() || !form.address.trim()) return
+    if (!form.company.trim() || !form.address.trim() || !form.invoiceNo.trim()) return
     const newId = String((customers.length > 0 ? Math.max(...customers.map(c => parseInt(c.id) || 0)) : 2000) + 1)
-    const newCustomer = { id: newId, invoiceNo: newId, subscriptions: [], ...form }
+    const newCustomer = { id: newId, subscriptions: [], ...form }
     setSaving(true)
     try {
       await insertCustomerDb(newCustomer)
       customers.push(newCustomer)
       refresh()
       setShowAdd(false)
-      setForm({ company: '', pic: 'Syed', contact: '', tin: '', brn: '', period: '', status: 'Active', address: '', tel: '' })
+      setForm({ invoiceNo: '', company: '', pic: 'Syed', contact: '', tin: '', brn: '', period: '', status: 'Active', address: '', tel: '' })
     } catch (err) {
       alert(err instanceof Error ? `Couldn't add customer: ${err.message}` : "Couldn't add customer.")
     } finally {
@@ -117,6 +117,11 @@ export default function CustomerList({ user, navigate }: Props) {
       {showAdd && (
         <Modal title="Add New Customer" onClose={() => setShowAdd(false)}>
           <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <FormField label="Invoice No" required>
+                <Input value={form.invoiceNo} onChange={v => setForm({ ...form, invoiceNo: v })} placeholder="e.g. 2204" />
+              </FormField>
+            </div>
             <div className="col-span-2">
               <FormField label="Company / Law Firm Name" required>
                 <Input value={form.company} onChange={v => setForm({ ...form, company: v })} placeholder="e.g. AZIZ & PARTNERS" />

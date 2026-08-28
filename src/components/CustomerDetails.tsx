@@ -314,6 +314,11 @@ export default function CustomerDetails({ user, id, navigate }: Props) {
                   : <p className="text-sm font-medium" style={{ color: '#2E2E2E' }}>{customer.company}</p>}
               </FormField>
             </div>
+            <FormField label="Invoice No">
+              {editing
+                ? <Input value={form.invoiceNo} onChange={v => setForm({ ...form, invoiceNo: v })} placeholder="e.g. 2204" />
+                : <p className="text-sm font-mono" style={{ color: '#2E2E2E' }}>{customer.invoiceNo}</p>}
+            </FormField>
             <FormField label="Contact Person">
               {editing
                 ? <Input value={form.contact} onChange={v => setForm({ ...form, contact: v })} />
