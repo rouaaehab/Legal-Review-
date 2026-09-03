@@ -1,6 +1,18 @@
 import { COMPANY, EDITORIAL_BOARD, BRAND_BLUE } from '../data/companyInfo'
-import logoUrl from '../assets/legal-review-logo.png'
-const productionLogoUrl = '/legal-review-logo.png'
+
+// Built-in `public/` asset (Vite serves whatever's in `public/` at the
+// site root). The previous hardcoded `'/legal-review-logo.png'` worked
+// on localhost but broke on Vercel whenever the deployment ran under a
+// non-root base path (FIGMA_PUBLIC_URL set, subpath team deployment,
+// etc.) — Vite prefixes the `base` onto all processed assets, but a
+// raw string literal in source is left as-is and the browser resolves
+// it against the domain root, not the deployment path. Using
+// `import.meta.env.BASE_URL` is the documented Vite way to reference
+// a public asset so the path is correct in every deployment context:
+//   - base: '/'              → BASE_URL is '/'      → '/legal-review-logo.png'
+//   - base: '/some-prefix/'  → BASE_URL is '/some-prefix/'  → '/some-prefix/legal-review-logo.png'
+// BASE_URL always ends with '/', so the simple concatenation is safe.
+const productionLogoUrl = `${import.meta.env.BASE_URL}legal-review-logo.png`
 
 // The thick brand-blue bar across the very top of every printed document —
 // present on both the real invoice and delivery order templates, above the
