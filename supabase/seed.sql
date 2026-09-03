@@ -481,7 +481,7 @@ insert into pub_types (code, label) values
   ('MLRH', 'Malaysian Law Review (High Court)'),
   ('MELR', 'Malaysian Employment Law Reports'),
   ('TCLR', 'The Commonwealth Law Review'),
-  ('SSLR', 'Sultan Sharafuddin Law Review')
+  ('SSLR', 'Sabah Sarawak Law Review')
 on conflict (code) do nothing;
 
 -- App users — passwords set to match the app's previous hardcoded demo

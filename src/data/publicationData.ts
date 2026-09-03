@@ -57,7 +57,7 @@ export const PUB_LABELS: Record<string, string> = {
   MLRH: 'Malaysian Law Review (High Court)',
   MELR: 'Malaysian Employment Law Reports',
   TCLR: 'The Commonwealth Law Review',
-  SSLR: 'Sultan Sharafuddin Law Review',
+  SSLR: 'Sabah Sarawak Law Review',
 }
 
 // Replaces the contents of PUB_LABELS in place. Called by loadAllData()
