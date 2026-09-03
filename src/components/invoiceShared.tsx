@@ -3,7 +3,13 @@ export { CustomerSearchDropdown } from './shared'
 
 export interface LineItem { pub: string; years: string; volumes: string; qty: number; unit: number }
 
-export const PUBLICATIONS = Object.entries(PUB_LABELS).map(([value, label]) => ({ value, label }))
+// Recomputed on every call so a publication type added in Book Management
+// shows up immediately in the Create/Edit Invoice dropdown without a
+// reload. A `const` snapshot here was the cause of the bug where newly
+// added types never appeared — the array was frozen at module load.
+export function PUBLICATIONS(): { value: string; label: string }[] {
+  return Object.entries(PUB_LABELS).map(([value, label]) => ({ value, label }))
+}
 export const VOLUMES_OPTS = ['Volume 1', 'Volume 2', 'Volume 3', 'Volume 4', 'Volume 5', 'Volume 6', 'Full Set'].map(v => ({ value: v, label: v }))
 
 // Guarantees the currently saved value always shows up as a selectable

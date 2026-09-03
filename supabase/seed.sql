@@ -4,7 +4,7 @@
 -- first (children before parents) then re-inserts everything.
 -- ===================================================================
 
-truncate table delivery_order_items, invoice_items, customer_subscriptions, delivery_orders, invoices, volumes, editions, customers restart identity cascade;
+truncate table delivery_order_items, invoice_items, customer_subscriptions, delivery_orders, invoices, volumes, editions, customers, pub_types restart identity cascade;
 
 -- Editions
 insert into editions (id, pub_type, category, year, period_label, volume_count, full_set_price, price_per_volume, is_active, is_auto_generated, notes) values ('MLRA-2012', 'MLRA', 'Annual', 2012, '2012', 6, 1980, 330, true, false, NULL);
@@ -472,13 +472,25 @@ update invoices set do_id = 'DO-2110' where id = 'INV-2110';
 update invoices set do_id = 'DO-2055' where id = 'INV-2055';
 
 
+-- Pub-type registry (seed-side mirror of the 5 originals in
+-- migration_2026_09_edition_admin.sql). Truncate at the top clears this
+-- table too, so the seed below restarts from a known state every run.
+truncate table pub_types restart identity;
+insert into pub_types (code, label) values
+  ('MLRA', 'Malaysian Law Review (Appellate Court)'),
+  ('MLRH', 'Malaysian Law Review (High Court)'),
+  ('MELR', 'Malaysian Employment Law Reports'),
+  ('TCLR', 'The Commonwealth Law Review'),
+  ('SSLR', 'Sultan Sharafuddin Law Review')
+on conflict (code) do nothing;
+
 -- App users — passwords set to match the app's previous hardcoded demo
 -- logins where they existed; the rest get a placeholder you should change
 -- on first login (there's no "change password" screen yet — update these
 -- rows directly in the Supabase Table Editor for now).
 truncate table app_users restart identity cascade;
-insert into app_users (name, email, password, role, status, created_at) values ('Ain Shuhada', 'admin@legalreview.com.my', 'admin123', 'admin', 'Active', '2024-01-01');
-insert into app_users (name, email, password, role, status, created_at) values ('Syed Izzat', 'staff@legalreview.com.my', 'staff123', 'employee', 'Active', '2024-03-15');
-insert into app_users (name, email, password, role, status, created_at) values ('Nadia Hanim', 'nadia@legalreview.com.my', 'changeme123', 'employee', 'Active', '2024-06-01');
-insert into app_users (name, email, password, role, status, created_at) values ('Yathwin Lim', 'yathwin@legalreview.com.my', 'changeme123', 'employee', 'Active', '2024-07-10');
-insert into app_users (name, email, password, role, status, created_at) values ('Effendy Razak', 'effe@legalreview.com.my', 'changeme123', 'employee', 'Inactive', '2024-08-20');
+insert into app_users (name, email, password, role, status, department, created_at) values ('Ain Shuhada', 'admin@legalreview.com.my', 'admin123', 'admin', 'Active', 'Editorial', '2024-01-01');
+insert into app_users (name, email, password, role, status, department, created_at) values ('Syed Izzat', 'staff@legalreview.com.my', 'staff123', 'employee', 'Active', 'Subscriptions', '2024-03-15');
+insert into app_users (name, email, password, role, status, department, created_at) values ('Nadia Hanim', 'nadia@legalreview.com.my', 'changeme123', 'employee', 'Active', 'Subscriptions', '2024-06-01');
+insert into app_users (name, email, password, role, status, department, created_at) values ('Yathwin Lim', 'yathwin@legalreview.com.my', 'changeme123', 'employee', 'Active', 'Fulfilment', '2024-07-10');
+insert into app_users (name, email, password, role, status, department, created_at) values ('Effendy Razak', 'effe@legalreview.com.my', 'changeme123', 'employee', 'Inactive', 'Fulfilment', '2024-08-20');

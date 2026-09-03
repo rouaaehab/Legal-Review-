@@ -1,17 +1,28 @@
 import { useState } from 'react'
 import { PageHeader, Card, FormField, Input, PrimaryBtn, GhostBtn } from './shared'
-import { changeAppUserPassword } from '../lib/db'
+import { changeAppUserPassword, updateOwnProfileDb } from '../lib/db'
 import type { AppUser, Screen } from '../App'
 
-interface Props { user: AppUser; navigate: (s: Screen) => void }
+interface Props {
+  user: AppUser
+  navigate: (s: Screen) => void
+  /** Called after a successful profile save so the in-memory user
+   *  (and the layout's avatar/name) reflects the new values without
+   *  requiring a sign-out / sign-in. */
+  onUserChange: (u: AppUser) => void
+}
 
 type SettingsTab = 'profile' | 'account'
 
-export default function Settings({ user }: Props) {
+export default function Settings({ user, onUserChange }: Props) {
   const [tab, setTab] = useState<SettingsTab>('profile')
   const [name, setName] = useState(user.name)
   const [email, setEmail] = useState(user.email)
-  const [saved, setSaved] = useState(false)
+  // Department is optional on AppUser (older sessions / in-memory users
+  // created before the User Profile feature shipped may not have it).
+  const [department, setDepartment] = useState(user.department ?? '')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileMsg, setProfileMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
   // Change-password form. Each field is a real controlled input — the
   // previous version had `value=""` + `onChange={() => {}}` which made
@@ -23,9 +34,53 @@ export default function Settings({ user }: Props) {
   const [pwdMsg, setPwdMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [pwdSaving, setPwdSaving] = useState(false)
 
-  const handleSave = () => {
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  // Profile save: validates locally, persists name/email/department to
+  // app_users via the same partial-update helper Admin → User Management
+  // uses, then refreshes the in-memory AppUser so the layout's avatar
+  // and the current-session name/email reflect the new values without
+  // forcing a sign-out. Role is intentionally NOT in the patch.
+  const handleSaveProfile = async () => {
+    setProfileMsg(null)
+    const trimmedName = name.trim()
+    const trimmedEmail = email.trim()
+    if (!trimmedName) {
+      setProfileMsg({ kind: 'err', text: 'Name is required.' })
+      return
+    }
+    if (!trimmedEmail) {
+      setProfileMsg({ kind: 'err', text: 'Email is required.' })
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setProfileMsg({ kind: 'err', text: 'Please enter a valid email address.' })
+      return
+    }
+    if (profileSaving) return
+    setProfileSaving(true)
+    try {
+      // The user.id isn't on AppUser (it's a session-shape, not the DB row),
+      // so we look up the row by email — emails are unique in app_users
+      // (schema.sql:189). If the user has just changed their email we'd
+      // be updating by the *old* email, which is fine because that's
+      // still the value the row is keyed by until this UPDATE returns.
+      await updateOwnProfileDb(user.email, {
+        name: trimmedName,
+        email: trimmedEmail,
+        department: department.trim() ? department.trim() : null,
+      })
+      onUserChange({
+        ...user,
+        name: trimmedName,
+        email: trimmedEmail,
+        department: department.trim() ? department.trim() : undefined,
+        avatar: trimmedName.charAt(0).toUpperCase(),
+      })
+      setProfileMsg({ kind: 'ok', text: 'Profile saved successfully.' })
+    } catch (err) {
+      setProfileMsg({ kind: 'err', text: err instanceof Error ? err.message : "Couldn't save profile." })
+    } finally {
+      setProfileSaving(false)
+    }
   }
 
   // Local validation runs first (same UX as before). On success we
@@ -107,7 +162,6 @@ export default function Settings({ user }: Props) {
                 <div>
                   <p className="font-medium" style={{ color: '#1B2A4A' }}>{user.name}</p>
                   <p className="text-sm capitalize mt-0.5" style={{ color: '#6B7280' }}>{user.role}</p>
-                  <button className="text-xs mt-2" style={{ color: '#B8935F' }}>Change avatar</button>
                 </div>
               </div>
 
@@ -124,18 +178,23 @@ export default function Settings({ user }: Props) {
                     style={{ border: '1px solid #E5E3DE', color: '#9CA3AF', backgroundColor: '#F9F8F6' }} />
                 </FormField>
                 <FormField label="Department">
-                  <Input value="Legal Publications" onChange={() => {}} />
+                  <Input value={department} onChange={setDepartment} placeholder="e.g. Legal Publications" />
                 </FormField>
               </div>
 
-              {saved && (
-                <div className="mt-4 px-4 py-2.5 rounded text-sm" style={{ backgroundColor: '#E6F4EA', color: '#1E7E34' }}>
-                  Profile saved successfully.
+              {profileMsg && (
+                <div className="mt-4 px-4 py-2.5 rounded text-sm" style={{
+                  backgroundColor: profileMsg.kind === 'ok' ? '#E6F4EA' : 'rgba(192,57,43,0.08)',
+                  color: profileMsg.kind === 'ok' ? '#1E7E34' : '#C0392B',
+                }}>
+                  {profileMsg.text}
                 </div>
               )}
 
               <div className="flex gap-3 mt-6">
-                <PrimaryBtn onClick={handleSave}>Save Changes</PrimaryBtn>
+                <PrimaryBtn onClick={profileSaving ? undefined : handleSaveProfile}>
+                  {profileSaving ? 'Saving…' : 'Save Changes'}
+                </PrimaryBtn>
                 <GhostBtn>Cancel</GhostBtn>
               </div>
             </Card>

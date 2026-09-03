@@ -15,7 +15,10 @@
 // a full reload.
 
 import { supabase } from './supabaseClient'
-import { allEditions, deductStock, type Edition, type VolumeRecord } from '../data/publicationData'
+import {
+  allEditions, deductStock, setPubLabels, AUTO_GENERATE_PUB_TYPES, PUB_LABELS,
+  type Edition, type VolumeRecord,
+} from '../data/publicationData'
 import {
   customers, invoices, deliveryOrders, fulfillments,
   type Customer, type CustomerSubscription,
@@ -179,6 +182,24 @@ export async function loadAllData(): Promise<void> {
   })
   fulfillments.length = 0
   fulfillments.push(...fulfillmentsBuilt)
+
+  // ---- pub_types registry + best-effort yearly auto-generation ----
+  // Pub types are loaded into the in-memory PUB_LABELS map; existing
+  // screens pick them up on their next render. The auto-generation is
+  // wrapped in try/catch so a misconfigured DB (e.g. migration not yet
+  // run, or no Admin user) never blocks the app from starting up.
+  try {
+    await loadPubTypes()
+    const year = new Date().getFullYear()
+    const created = await ensureYearlyEditionsFor(year)
+    if (created.length > 0) {
+      // eslint-disable-next-line no-console
+      console.info(`[book-management] auto-created ${created.length} edition(s) for ${year}: ${created.join(', ')}`)
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[book-management] startup auto-generation skipped:', err)
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -238,6 +259,303 @@ export async function deductStockAndPersist(pubType: string, periodLabel: string
     const { error } = await supabase.from('volumes').update({ stock: c.newStock }).eq('edition_id', edition.id).eq('vol_num', c.volNum)
     if (error) throw error
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Book Management — admin-driven publication types and edition CRUD
+//
+// Additive helpers added for the Book Management feature (see
+// supabase/migration_2026_09_edition_admin.sql). The pub_types registry
+// makes "adding a brand-new publication type" possible from the UI without
+// any code change; the edition CRUD helpers let admins add / edit / delete
+// individual editions; ensureYearlyEditionsFor() is the auto-generation
+// routine that creates the next year's Annual edition for MLRA / MLRH /
+// MELR / TCLR, cloning the most recent existing edition's volume count
+// and pricing (important for TCLR which switched from 1 to 2 volumes
+// between 2020 and 2021).
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Reads every row from the `pub_types` table and installs it as the
+ * in-memory `PUB_LABELS` map. Called from `loadAllData()` once on app
+ * startup. The original 5 codes are seeded at module load (in
+ * publicationData.ts) so even a screen that runs before this finishes
+ * still has a label to show.
+ */
+export async function loadPubTypes(): Promise<void> {
+  const { data, error } = await supabase.from('pub_types').select('code, label').order('code')
+  if (error) throw error
+  setPubLabels((data ?? []) as { code: string; label: string }[])
+}
+
+/** Row shape returned by the `pub_types` table. */
+export interface PubTypeRow {
+  code: string
+  label: string
+}
+
+/** Reads pub_types without touching the global PUB_LABELS map. */
+export async function listPubTypes(): Promise<PubTypeRow[]> {
+  const { data, error } = await supabase.from('pub_types').select('code, label').order('code')
+  if (error) throw error
+  return (data ?? []) as PubTypeRow[]
+}
+
+/**
+ * Adds a brand-new publication type to the registry. Refuses to:
+ *   - reuse an existing code (PK collision)
+ *   - use a code longer than 8 chars / non-uppercase (display sanity)
+ *   - use one of the 5 "original" codes that already exist
+ * Mirrors the new row into the in-memory PUB_LABELS map so the new
+ * publication type shows up in Create Invoice / Create DO / Reports
+ * without a reload.
+ */
+export async function addPubTypeDb(code: string, label: string): Promise<void> {
+  const norm = code.trim().toUpperCase()
+  if (!norm) throw new Error('Publication type code is required.')
+  if (!/^[A-Z0-9]{2,8}$/.test(norm)) {
+    throw new Error('Code must be 2–8 letters/numbers, uppercase (e.g. JLR).')
+  }
+  const trimmedLabel = label.trim()
+  if (!trimmedLabel) throw new Error('Display label is required.')
+  if (PUB_LABELS[norm]) throw new Error(`Publication type "${norm}" already exists.`)
+
+  const { error } = await supabase.from('pub_types').insert({ code: norm, label: trimmedLabel })
+  if (error) {
+    if (/duplicate key|unique constraint/i.test(error.message)) {
+      throw new Error(`Publication type "${norm}" already exists.`)
+    }
+    throw error
+  }
+  PUB_LABELS[norm] = trimmedLabel
+}
+
+/**
+ * Deletes a publication type from the registry. Refuses to delete one
+ * that has any edition rows left in the `editions` table — the
+ * (subscription) FK from `customer_subscriptions.edition_id` would block
+ * a cascade. The admin has to delete the editions first (using
+ * `deleteEditionDb`) before this will succeed.
+ */
+export async function deletePubTypeDb(code: string): Promise<void> {
+  const { count, error: countErr } = await supabase
+    .from('editions')
+    .select('id', { count: 'exact', head: true })
+    .eq('pub_type', code)
+  if (countErr) throw countErr
+  if ((count ?? 0) > 0) {
+    throw new Error(`Cannot delete "${code}" — it still has ${count} edition(s). Delete those first.`)
+  }
+
+  const { error } = await supabase.from('pub_types').delete().eq('code', code)
+  if (error) throw error
+  delete PUB_LABELS[code]
+}
+
+/**
+ * Inserts a new edition + its N volume rows in two writes. The volume
+ * stock defaults to 0 — the admin edits stock through the existing
+ * StockCell in the Book Management table. The edition is appended to
+ * `allEditions` so the rest of the app sees it without a reload.
+ *
+ * The `edition.id` is the caller's primary key (e.g. 'MLRA-2027'); a
+ * collision surfaces as a duplicate-key error and is bubbled up as a
+ * clear message.
+ */
+export interface NewEditionArgs {
+  id: string
+  pubType: string
+  category: string
+  year: number
+  periodLabel: string
+  volumeCount: number
+  fullSetPrice: number
+  pricePerVolume: number
+  isActive?: boolean
+  isAutoGenerated?: boolean
+  notes?: string
+}
+
+export async function addEditionDb(args: NewEditionArgs, initialStocks: number[] = []): Promise<Edition> {
+  if (!args.id.trim()) throw new Error('Edition id is required.')
+  if (!args.pubType.trim()) throw new Error('Publication type is required.')
+  if (!PUB_LABELS[args.pubType]) throw new Error(`Unknown publication type "${args.pubType}".`)
+  if (!args.category.trim()) throw new Error('Category is required.')
+  if (!args.volumeCount || args.volumeCount < 1) throw new Error('Volume count must be at least 1.')
+  if (allEditions.some(e => e.id === args.id)) {
+    throw new Error(`Edition "${args.id}" already exists.`)
+  }
+
+  const { error: editionErr } = await supabase.from('editions').insert({
+    id: args.id,
+    pub_type: args.pubType,
+    category: args.category,
+    year: args.year,
+    period_label: args.periodLabel,
+    volume_count: args.volumeCount,
+    full_set_price: args.fullSetPrice,
+    price_per_volume: args.pricePerVolume,
+    is_active: args.isActive ?? true,
+    is_auto_generated: args.isAutoGenerated ?? false,
+    notes: args.notes ?? null,
+  })
+  if (editionErr) {
+    if (/duplicate key|unique constraint/i.test(editionErr.message)) {
+      throw new Error(`Edition "${args.id}" already exists.`)
+    }
+    throw editionErr
+  }
+
+  const volumeRows = Array.from({ length: args.volumeCount }, (_, i) => ({
+    edition_id: args.id,
+    vol_num: i + 1,
+    label: `Volume ${i + 1}`,
+    stock: initialStocks[i] ?? 0,
+  }))
+  const { error: volErr } = await supabase.from('volumes').insert(volumeRows)
+  if (volErr) {
+    // Roll back the just-inserted edition so the DB doesn't end up with
+    // a half-orphaned row. The FK from volumes → editions means deleting
+    // the edition cleans up the just-inserted volumes too.
+    await supabase.from('editions').delete().eq('id', args.id)
+    throw volErr
+  }
+
+  const edition: Edition = {
+    id: args.id,
+    pubType: args.pubType,
+    category: args.category as Edition['category'],
+    year: args.year,
+    periodLabel: args.periodLabel,
+    volumeCount: args.volumeCount,
+    fullSetPrice: args.fullSetPrice,
+    pricePerVolume: args.pricePerVolume,
+    isActive: args.isActive ?? true,
+    isAutoGenerated: args.isAutoGenerated ?? false,
+    volumes: volumeRows.map((r) => ({ volNum: r.vol_num, label: r.label, stock: r.stock })),
+    notes: args.notes,
+  }
+  allEditions.push(edition)
+  return edition
+}
+
+/**
+ * Updates the editable metadata on an existing edition (everything except
+ * `volumes`, which has its own helpers). The in-memory object is mirrored
+ * so the Book Management row reflects the new values immediately.
+ */
+export interface UpdateEditionPatch {
+  year?: number
+  periodLabel?: string
+  fullSetPrice?: number
+  pricePerVolume?: number
+  isActive?: boolean
+  notes?: string | null
+}
+
+export async function updateEditionDb(editionId: string, patch: UpdateEditionPatch): Promise<void> {
+  const payload: Record<string, unknown> = {}
+  if (patch.year !== undefined) payload.year = patch.year
+  if (patch.periodLabel !== undefined) payload.period_label = patch.periodLabel
+  if (patch.fullSetPrice !== undefined) payload.full_set_price = patch.fullSetPrice
+  if (patch.pricePerVolume !== undefined) payload.price_per_volume = patch.pricePerVolume
+  if (patch.isActive !== undefined) payload.is_active = patch.isActive
+  if (patch.notes !== undefined) payload.notes = patch.notes
+  if (Object.keys(payload).length === 0) return
+
+  const { error } = await supabase.from('editions').update(payload).eq('id', editionId)
+  if (error) throw error
+
+  const e = allEditions.find(x => x.id === editionId)
+  if (e) {
+    if (patch.year !== undefined) e.year = patch.year
+    if (patch.periodLabel !== undefined) e.periodLabel = patch.periodLabel
+    if (patch.fullSetPrice !== undefined) e.fullSetPrice = patch.fullSetPrice
+    if (patch.pricePerVolume !== undefined) e.pricePerVolume = patch.pricePerVolume
+    if (patch.isActive !== undefined) e.isActive = patch.isActive
+    if (patch.notes !== undefined) e.notes = patch.notes ?? undefined
+  }
+}
+
+/**
+ * Deletes an edition. Refuses if any other table still references it
+ * (customer_subscriptions, fulfillments, invoice_items,
+ * delivery_order_items) — the admin has to clean those up first. The
+ * volumes cascade-delete with the edition (FK ON DELETE CASCADE on
+ * volumes.edition_id), so the per-volume stock rows go with it.
+ */
+export async function deleteEditionDb(editionId: string): Promise<void> {
+  const referenceChecks: Array<{ table: string; column: string; label: string }> = [
+    { table: 'customer_subscriptions', column: 'edition_id', label: 'customer subscriptions' },
+    { table: 'fulfillments', column: 'edition_id', label: 'fulfillments' },
+  ]
+  for (const c of referenceChecks) {
+    const { count, error } = await supabase
+      .from(c.table)
+      .select('id', { count: 'exact', head: true })
+      .eq(c.column, editionId)
+    if (error) throw error
+    if ((count ?? 0) > 0) {
+      throw new Error(`Cannot delete "${editionId}" — it is still referenced by ${count} ${c.label}.`)
+    }
+  }
+
+  const { error } = await supabase.from('editions').delete().eq('id', editionId)
+  if (error) throw error
+
+  const idx = allEditions.findIndex(e => e.id === editionId)
+  if (idx >= 0) allEditions.splice(idx, 1)
+}
+
+/**
+ * Auto-creates an Annual edition for the given year for every pub type
+ * listed in `AUTO_GENERATE_PUB_TYPES` that doesn't already have one. The
+ * new edition clones the most recent existing Annual edition of the same
+ * pub type (its volume count + pricing) — important for TCLR, whose
+ * 1-volume (2014–2020) and 2-volume (2021+) structures differ.
+ *
+ * Volume stock starts at 0 for every volume; admin edits stock through
+ * the existing StockCell. SSLR is never touched (its series ended 2020)
+ * and custom pub types added by the admin are not auto-generated.
+ *
+ * Idempotent: re-running for the same year is a no-op. Returns the list
+ * of edition ids that were actually created (empty if everything already
+ * existed, or if a pub type has no prior edition to clone from).
+ */
+export async function ensureYearlyEditionsFor(year: number): Promise<string[]> {
+  const created: string[] = []
+  for (const pubType of AUTO_GENERATE_PUB_TYPES) {
+    const newId = `${pubType}-${year}`
+    if (allEditions.some(e => e.id === newId)) continue
+    // Most recent existing Annual edition of this pub type, to clone.
+    const template = allEditions
+      .filter(e => e.pubType === pubType && e.category === 'Annual')
+      .sort((a, b) => b.year - a.year)[0]
+    if (!template) continue  // nothing to clone from — skip silently
+
+    const args: NewEditionArgs = {
+      id: newId,
+      pubType,
+      category: 'Annual',
+      year,
+      periodLabel: String(year),
+      volumeCount: template.volumeCount,
+      fullSetPrice: template.fullSetPrice,
+      pricePerVolume: template.pricePerVolume,
+      isActive: true,
+      isAutoGenerated: true,
+      notes: template.notes,
+    }
+    try {
+      await addEditionDb(args)
+      created.push(newId)
+    } catch (err) {
+      // Don't let one failure abort the rest of the loop.
+      // eslint-disable-next-line no-console
+      console.warn(`[book-management] could not auto-create ${newId}:`, err)
+    }
+  }
+  return created
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -355,6 +673,20 @@ export async function deleteInvoiceDb(id: string): Promise<void> {
   if (error) throw error
 }
 
+// Single-column update of the invoice's `do_id` — used by Create Invoice
+// when the admin opts in to also creating a Delivery Order. The two rows
+// have a circular FK (invoices.do_id <-> delivery_orders.invoice_id), so
+// the invoice is inserted first with do_id = null, the DO is then
+// inserted with the real invoice id, and finally this helper writes the
+// DO's id back onto the invoice. Mirrors the change onto the in-memory
+// `invoices` array so the UI updates without a reload.
+export async function setInvoiceDoId(invoiceId: string, doId: string | null): Promise<void> {
+  const { error } = await supabase.from('invoices').update({ do_id: doId }).eq('id', invoiceId)
+  if (error) throw error
+  const inv = invoices.find(i => i.id === invoiceId)
+  if (inv) inv.doId = doId ?? undefined
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Delivery orders
 // ──────────────────────────────────────────────────────────────────────────────
@@ -420,6 +752,9 @@ export interface AppUserRow {
   email: string
   role: 'admin' | 'employee'
   status: string
+  /** Free-text label (e.g. "Subscriptions"); nullable so legacy rows
+   *  written before the User Profile feature are still valid. */
+  department?: string | null
   created: string
 }
 
@@ -428,6 +763,7 @@ export async function loadAppUsers(): Promise<AppUserRow[]> {
   if (error) throw error
   return (data ?? []).map((u: any) => ({
     id: u.id, name: u.name, email: u.email, role: u.role, status: u.status,
+    department: u.department ?? null,
     created: isoToDisplay(u.created_at),
   }))
 }
@@ -476,11 +812,38 @@ export async function addAppUserDb(u: { name: string; email: string; role: 'admi
     .select()
     .single()
   if (error) throw error
-  return { id: data.id, name: data.name, email: data.email, role: data.role, status: data.status, created: isoToDisplay(data.created_at) }
+  return {
+    id: data.id, name: data.name, email: data.email, role: data.role, status: data.status,
+    department: data.department ?? null,
+    created: isoToDisplay(data.created_at),
+  }
 }
 
-export async function updateAppUserDb(id: string, patch: { name?: string; email?: string; role?: string; status?: string }): Promise<void> {
+export async function updateAppUserDb(id: string, patch: { name?: string; email?: string; role?: string; status?: string; department?: string | null }): Promise<void> {
   const { error } = await supabase.from('app_users').update(patch).eq('id', id)
+  if (error) throw error
+}
+
+// Self-service profile update for Settings → User Profile. The in-memory
+// AppUser only carries the user's email (not the row id), so we look up
+// the row by email first. Email is the natural lookup key — schema.sql
+// has `email text not null unique` — and the same pattern is used by
+// verifyLogin() above. Intentionally does NOT allow role/status changes:
+// the User Profile form only exposes name/email/department, and the
+// helper enforces that at the type level.
+export async function updateOwnProfileDb(currentEmail: string, patch: { name: string; email: string; department: string | null }): Promise<void> {
+  const { data, error: findErr } = await supabase
+    .from('app_users')
+    .select('id')
+    .eq('email', currentEmail)
+    .maybeSingle()
+  if (findErr) throw findErr
+  if (!data) throw new Error('Your account could not be found. Please sign in again.')
+  const { error } = await supabase.from('app_users').update({
+    name: patch.name,
+    email: patch.email,
+    department: patch.department,
+  }).eq('id', data.id)
   if (error) throw error
 }
 

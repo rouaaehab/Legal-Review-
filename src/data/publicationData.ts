@@ -6,8 +6,18 @@
 // in that array, so Book Management edits (price changes, added/removed
 // volumes, stock updates) are reflected everywhere immediately, exactly as
 // before — the only difference is where the array gets filled from.
+//
+// `PubType` was once a strict union of the 5 original publication codes,
+// but Book Management now lets an admin introduce a brand-new publication
+// type from the UI (see migration_2026_09_edition_admin.sql). It's widened
+// to `string` here so the rest of the app keeps compiling and stays
+// data-driven. `PUB_LABELS` is no longer a `const`; it's a registry that's
+// populated from the `pub_types` table on startup via `setPubLabels()`
+// (and seeded with the 5 originals at module load so existing screens
+// keep showing the same labels they always did before the registry even
+// loads).
 
-export type PubType = 'MLRA' | 'MLRH' | 'MELR' | 'TCLR' | 'SSLR'
+export type PubType = string
 export type BoundCategory = 'Annual' | 'Selected Cases' | 'Consolidated Index'
 
 export interface VolumeRecord {
@@ -37,13 +47,40 @@ export interface Edition {
 // the current data without needing its own fetch.
 export const allEditions: Edition[] = []
 
-export const PUB_LABELS: Record<PubType, string> = {
+// Registry of publication-type codes → display labels. Seeded with the 5
+// originals at module load (so a screen that runs before loadAllData()
+// finishes still has a label to show) and then overwritten by
+// `setPubLabels()` once the `pub_types` table has been fetched on startup.
+// Admins can add to this from Book Management.
+export const PUB_LABELS: Record<string, string> = {
   MLRA: 'Malaysian Law Review (Appellate Court)',
   MLRH: 'Malaysian Law Review (High Court)',
   MELR: 'Malaysian Employment Law Reports',
   TCLR: 'The Commonwealth Law Review',
   SSLR: 'Sultan Sharafuddin Law Review',
 }
+
+// Replaces the contents of PUB_LABELS in place. Called by loadAllData()
+// after fetching the `pub_types` table so the registry mirrors what's in
+// the DB. Clears any codes that no longer exist (so a deleted pub type
+// doesn't keep showing up in dropdowns). Pass `[]` to clear.
+export function setPubLabels(entries: { code: string; label: string }[]): void {
+  // Wipe everything and re-populate. Using `for ... in` would also work
+  // but this is more explicit about the contract.
+  for (const k of Object.keys(PUB_LABELS)) {
+    delete PUB_LABELS[k]
+  }
+  for (const e of entries) {
+    if (e.code) PUB_LABELS[e.code] = e.label
+  }
+}
+
+// Pub types that should have a new Annual edition auto-created for the
+// current year (or for the year an admin picks in the "Generate Annual
+// Editions" button). SSLR is deliberately excluded — its series ended in
+// 2020. Custom pub types added by the admin are NOT auto-generated; the
+// admin opts in by creating the edition manually.
+export const AUTO_GENERATE_PUB_TYPES: readonly string[] = ['MLRA', 'MLRH', 'MELR', 'TCLR']
 
 export const LOW_STOCK = 10
 

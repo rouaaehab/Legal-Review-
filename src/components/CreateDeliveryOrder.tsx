@@ -159,7 +159,7 @@ export default function CreateDeliveryOrder({ user, navigate }: Props) {
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <FormField label="Publication" required>
-                  <Select value={pub} onChange={setPub} placeholder="Select publication…" options={PUBS} />
+                  <Select value={pub} onChange={setPub} placeholder="Select publication…" options={PUBS()} />
                 </FormField>
               </div>
               <FormField label="Year">

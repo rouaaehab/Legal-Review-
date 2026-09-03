@@ -237,7 +237,7 @@ export default function EditDeliveryOrder({ navigate, id }: Props) {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <FormField label="Publication" required>
-                      <Select value={pub} onChange={setPub} options={withCurrentOption(PUBS, pub)} />
+                      <Select value={pub} onChange={setPub} options={withCurrentOption(PUBS(), pub)} />
                     </FormField>
                   </div>
                   <FormField label="Year">

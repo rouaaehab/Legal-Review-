@@ -43,6 +43,9 @@ export interface AppUser {
   role: UserRole
   email: string
   avatar: string
+  /** Free-text department label; set from Settings → User Profile.
+   *  Optional so existing call sites that don't care about it keep working. */
+  department?: string
 }
 
 type LoadState = 'loading' | 'ready' | 'error'
@@ -164,7 +167,7 @@ export default function App() {
         : <DeliveryOrderList user={user} navigate={navigate} />
       case 'delivery-order-details': return <DeliveryOrderDetails user={user} id={selectedId} navigate={navigate} />
       case 'reports': return <Reports user={user} navigate={navigate} />
-      case 'settings': return <Settings user={user} navigate={navigate} />
+      case 'settings': return <Settings user={user} navigate={navigate} onUserChange={setUser} />
       case 'user-management': return <UserManagement user={user} navigate={navigate} />
       default: return <Dashboard user={user} navigate={navigate} />
     }

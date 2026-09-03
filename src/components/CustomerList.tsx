@@ -88,8 +88,13 @@ export default function CustomerList({ user, navigate }: Props) {
               <Td>
                 <span className="font-medium text-sm" style={{ color: '#1B2A4A' }}>{c.company}</span>
               </Td>
-              <Td><span className="text-sm">{c.pic}</span></Td>
-              <Td><span className="text-sm" style={{ color: '#6B7280' }}>{c.contact}</span></Td>
+              {/* PIC: narrow column. Contact Person: wider so full names fit
+                  without wrapping. Widths are applied as Tailwind classes via
+                  Td's className prop — this only affects these two columns
+                  in the Customers table; the shared Table/Td components and
+                  every other table are untouched. */}
+              <Td className="w-24"><span className="text-sm">{c.pic}</span></Td>
+              <Td className="w-56"><span className="text-sm" style={{ color: '#6B7280' }}>{c.contact}</span></Td>
               <Td><span className="text-sm font-mono" style={{ color: '#6B7280' }}>{c.period}</span></Td>
               <Td><StatusBadge status={c.status} /></Td>
               <Td>

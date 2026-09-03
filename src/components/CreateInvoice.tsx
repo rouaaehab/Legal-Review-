@@ -3,7 +3,7 @@ import { ArrowLeft, Plus, Trash2, Upload } from 'lucide-react'
 import { Card, FormField, Input, Select, PrimaryBtn, GhostBtn, CustomerSearchDropdown } from './shared'
 import { DO_STATUSES, invoices, deliveryOrders, customers, generateTrackingNo, getNextInvoiceNo, getNextDONo } from '../data/sampleData'
 import { allEditions, PUB_LABELS, getStockInfo } from '../data/publicationData'
-import { insertInvoiceDb, insertDeliveryOrderDb, deductStockAndPersist, uploadInvoicePdf } from '../lib/db'
+import { insertInvoiceDb, insertDeliveryOrderDb, deductStockAndPersist, uploadInvoicePdf, setInvoiceDoId } from '../lib/db'
 import {
   toDisplayDate,
   getUnitPrice, PUBLICATIONS, VOLUMES_OPTS,
@@ -114,9 +114,19 @@ export default function CreateInvoice({ user, navigate }: Props) {
       // Creating a delivery order here links it to this invoice both ways
       // (invoice.doId / DO.invoiceId), and the invoice's displayed status
       // will always mirror this DO's status from now on (see
-      // getInvoiceStatus) rather than being tracked separately. The DO is
-      // persisted (and its id resolved) BEFORE the invoice is, so the
-      // invoice row we save already has the correct do_id.
+      // getInvoiceStatus) rather than being tracked separately.
+      //
+      // The two tables have a circular FK (invoices.do_id <-> delivery_orders
+      // .invoice_id), so we resolve it in three writes: invoice first with
+      // do_id = null, then the DO with the real invoice id, then
+      // setInvoiceDoId to point the invoice back at the DO. The DO branch
+      // intentionally does NOT touch stock — the single deduction stays in
+      // the items loop below.
+      await insertInvoiceDb(invObj)
+      // This is always a brand new id (`INV-${Date.now()}`), so this always
+      // pushes a new record rather than overwriting an existing one.
+      invoices.push(invObj)
+
       if (createDO) {
         const doId = `DO-${Date.now()}`
         const namedItems = items.filter(it => it.pub)
@@ -151,13 +161,12 @@ export default function CreateInvoice({ user, navigate }: Props) {
         }
         await insertDeliveryOrderDb(doObj)
         deliveryOrders.push(doObj)
+        // Link the invoice back to the DO. The invoice row already exists
+        // (we just inserted it above), so the FK passes; the in-memory
+        // `invoices` array is also kept in sync via the helper.
+        await setInvoiceDoId(id, doId)
         invObj.doId = doId
       }
-
-      await insertInvoiceDb(invObj)
-      // This is always a brand new id (`INV-${Date.now()}`), so this always
-      // pushes a new record rather than overwriting an existing one.
-      invoices.push(invObj)
 
       // Persist the PDF if one was attached at create time. The
       // insertInvoiceDb above intentionally wrote `attachment = null` —
@@ -251,7 +260,7 @@ export default function CreateInvoice({ user, navigate }: Props) {
                 <div className="grid gap-2 items-start"
                   style={{ gridTemplateColumns: '2fr 1fr 1fr 0.7fr 1fr 1fr 40px' }}>
                   <Select value={item.pub} onChange={v => updateItem(i, 'pub', v)}
-                    placeholder="Select publication…" options={PUBLICATIONS} />
+                    placeholder="Select publication…" options={PUBLICATIONS()} />
                   {/* years options pulled live from Book Management (allEditions) for this publication */}
                   <Select value={item.years} onChange={v => updateItem(i, 'years', v)}
                     placeholder="Year…"

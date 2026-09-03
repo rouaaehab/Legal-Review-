@@ -1,11 +1,16 @@
 import { useState, useReducer } from 'react'
-import { ChevronDown, ChevronRight, Zap, Edit2, AlertTriangle, CheckCircle2, Package, Plus, Trash2 } from 'lucide-react'
-import { PageHeader, Card } from './shared'
+import { ChevronDown, ChevronRight, Zap, Edit2, AlertTriangle, CheckCircle2, Package, Plus, Trash2, BookPlus, RefreshCw } from 'lucide-react'
+import { PageHeader, Card, Modal, FormField, Input, Select, PrimaryBtn } from './shared'
 import {
   allEditions, computeFullSet, LOW_STOCK, PUB_LABELS,
   type Edition, type PubType, type VolumeRecord, type BoundCategory,
 } from '../data/publicationData'
-import { updateVolumeStockDb, updateEditionPriceDb, addVolumeDb, deleteVolumeDb } from '../lib/db'
+import {
+  updateVolumeStockDb, updateEditionPriceDb, addVolumeDb, deleteVolumeDb,
+  addEditionDb, updateEditionDb, deleteEditionDb,
+  addPubTypeDb, deletePubTypeDb, listPubTypes, ensureYearlyEditionsFor,
+  type NewEditionArgs, type PubTypeRow,
+} from '../lib/db'
 import type { AppUser, Screen } from '../App'
  
 interface Props { user: AppUser; navigate: (s: Screen) => void }
@@ -113,9 +118,12 @@ function PriceCell({
 // what makes edits made here actually show up in Create Invoice / Create
 // Delivery Order, which both read live from `allEditions`.
 function EditionRow({
-  edition, isAdmin, defaultExpanded = false, onEdited,
+  edition, isAdmin, defaultExpanded = false, onEdited, onEdit, onDelete,
 }: {
-  edition: Edition; isAdmin: boolean; defaultExpanded?: boolean; onEdited: () => void
+  edition: Edition; isAdmin: boolean; defaultExpanded?: boolean
+  onEdited: () => void
+  onEdit: (e: Edition) => void
+  onDelete: (e: Edition) => void
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
 
@@ -269,13 +277,35 @@ function EditionRow({
             </span>
           )}
         </td>
- 
+
+        {/* Per-row admin actions */}
+        {isAdmin && (
+          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => onEdit(edition)}
+                title="Edit edition details (year, period, prices, notes)"
+                className="p-1 rounded hover:bg-gray-100 transition-colors"
+              >
+                <Edit2 size={13} style={{ color: '#1B2A4A' }} />
+              </button>
+              <button
+                onClick={() => onDelete(edition)}
+                title="Delete this edition"
+                className="p-1 rounded hover:bg-red-50 transition-colors"
+              >
+                <Trash2 size={13} style={{ color: '#B8935F' }} />
+              </button>
+            </div>
+          </td>
+        )}
+
       </tr>
- 
+
       {/* ── Expanded detail ─────────────────────────────────────────────── */}
       {expanded && (
         <tr style={{ backgroundColor: '#FAFAF8' }}>
-          <td colSpan={7} className="px-6 py-5" style={{ borderBottom: '1px solid #E5E3DE' }}>
+          <td colSpan={isAdmin ? 8 : 7} className="px-6 py-5" style={{ borderBottom: '1px solid #E5E3DE' }}>
             <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
  
               {/* Volume inventory */}
@@ -389,20 +419,45 @@ function EditionRow({
 }
  
 // ── Main component ────────────────────────────────────────────────────────────
-const PUB_TABS: PubType[] = ['MLRA', 'MLRH', 'MELR', 'TCLR', 'SSLR']
+// Publication tabs are now driven by the live `PUB_LABELS` registry
+// (populated from the `pub_types` table on startup). The 5 originals are
+// pre-seeded at module load so the component always has at least those
+// to render, even before the DB load completes. Admins can add more.
+const ORIGINAL_PUB_TABS: PubType[] = ['MLRA', 'MLRH', 'MELR', 'TCLR', 'SSLR']
  
 const SECTION_TABS: BoundCategory[] = ['Annual', 'Selected Cases', 'Consolidated Index']
 
 export default function BookManagement({ user }: Props) {
-  const [pub, setPub] = useState<PubType>('MLRA')
-  const [section, setSection] = useState<BoundCategory>('Annual')
   const isAdmin = user.role === 'admin'
+  // Pub tabs are derived from the live `PUB_LABELS` registry (populated
+  // from the `pub_types` table on startup). The 5 originals are pre-seeded
+  // at module load, so a render before the DB load still has a usable list.
+  const pubTabs: string[] = (Object.keys(PUB_LABELS).length > 0
+    ? Object.keys(PUB_LABELS)
+    : ORIGINAL_PUB_TABS
+  ).sort()
+  const [pub, setPub] = useState<string>(() => pubTabs[0] ?? 'MLRA')
+  const [section, setSection] = useState<BoundCategory>('Annual')
   // Stock/price edits in EditionRow mutate the shared `allEditions` objects
   // directly, so we just need a way to force this component (and therefore
   // the summary stats below, which are computed fresh on every render) to
   // re-render after an edit.
   const [, refresh] = useReducer((n: number) => n + 1, 0)
- 
+
+  // ── Admin modal state ──────────────────────────────────────────────────────
+  const [showAddEdition, setShowAddEdition] = useState(false)
+  const [editingEdition, setEditingEdition] = useState<Edition | null>(null)
+  const [showAddPubType, setShowAddPubType] = useState(false)
+  const [showManagePubTypes, setShowManagePubTypes] = useState(false)
+  const [pubTypeRows, setPubTypeRows] = useState<PubTypeRow[]>([])
+  const [generating, setGenerating] = useState(false)
+  const [toast, setToast] = useState<{ kind: 'success' | 'info' | 'error'; text: string } | null>(null)
+
+  const showToast = (kind: 'success' | 'info' | 'error', text: string) => {
+    setToast({ kind, text })
+    setTimeout(() => setToast(null), 4000)
+  }
+
   const pubEditions = allEditions.filter(e => e.pubType === pub)
   const hasExtraSections = pub === 'MLRA' || pub === 'MLRH'
   const isSslr = pub === 'SSLR'
@@ -428,13 +483,35 @@ export default function BookManagement({ user }: Props) {
   const totalStock = annualEditions.flatMap(e => e.volumes).reduce((s, v) => s + v.stock, 0)
   const fullSetsAvail = annualEditions.filter(e => computeFullSet(e.volumes) > 0).length
   const lowEditions = annualEditions.filter(e => e.volumes.some(v => v.stock > 0 && v.stock < LOW_STOCK)).length
- 
-  const PUB_SHORT_LABELS: Record<PubType, string> = {
-    MLRA: 'Malaysian Law Review (Appellate Court)',
-    MLRH: 'Malaysian Law Review (High Court)',
-    MELR: 'Malaysian Employment Law Reports',
-    TCLR: 'The Commonwealth Law Review',
-    SSLR: 'Sultan Sharafuddin Law Review',
+
+  const currentYear = new Date().getFullYear()
+  const pubLabel = PUB_LABELS[pub] ?? pub
+
+  // ── Admin handlers ─────────────────────────────────────────────────────────
+  const handleGenerate = async () => {
+    setGenerating(true)
+    try {
+      const created = await ensureYearlyEditionsFor(currentYear)
+      refresh()
+      if (created.length === 0) {
+        showToast('info', `All ${currentYear} Annual editions for MLRA, MLRH, MELR, TCLR already exist.`)
+      } else {
+        showToast('success', `Created ${created.length} edition(s) for ${currentYear}: ${created.join(', ')}`)
+      }
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Could not generate editions.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const openManagePubTypes = async () => {
+    try {
+      setPubTypeRows(await listPubTypes())
+      setShowManagePubTypes(true)
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Could not load publication types.')
+    }
   }
  
   return (
@@ -442,11 +519,43 @@ export default function BookManagement({ user }: Props) {
       <PageHeader
         title="Book Management"
         subtitle="Publication inventory, pricing, and delivery tracking"
+        action={isAdmin ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors disabled:opacity-60"
+              style={{ border: '1px solid #C9BFAE', color: '#B8935F', backgroundColor: 'transparent' }}
+              title={`Create the ${currentYear} Annual edition for every pub type that has one (MLRA, MLRH, MELR, TCLR). Idempotent — skips years that already exist.`}
+            >
+              <RefreshCw size={14} className={generating ? 'animate-spin' : ''} />
+              {generating ? 'Generating…' : `Generate ${currentYear} Editions`}
+            </button>
+            <button
+              onClick={() => setShowAddPubType(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors"
+              style={{ border: '1px solid #C9BFAE', color: '#B8935F', backgroundColor: 'transparent' }}
+            >
+              <BookPlus size={14} /> New Publication Type
+            </button>
+            <button
+              onClick={openManagePubTypes}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors"
+              style={{ border: '1px solid #C9BFAE', color: '#B8935F', backgroundColor: 'transparent' }}
+              title="View and remove publication types (only allowed when the type has no editions left)"
+            >
+              Manage Types
+            </button>
+            <PrimaryBtn onClick={() => setShowAddEdition(true)}>
+              <Plus size={14} /> Add Edition
+            </PrimaryBtn>
+          </div>
+        ) : undefined}
       />
- 
+
       {/* Publication tabs */}
       <div className="flex gap-0.5 mb-6" style={{ borderBottom: '1px solid #E5E3DE' }}>
-        {PUB_TABS.map(p => (
+        {pubTabs.map(p => (
           <button key={p} onClick={() => { setPub(p); setSection('Annual') }}
             className="px-5 py-2.5 text-sm font-medium transition-colors"
             style={{
@@ -458,10 +567,10 @@ export default function BookManagement({ user }: Props) {
           </button>
         ))}
       </div>
- 
+
       {/* Pub title + summary */}
       <div className="mb-5">
-        <h2 className="text-base font-semibold" style={{ color: '#1B2A4A' }}>{PUB_SHORT_LABELS[pub]}</h2>
+        <h2 className="text-base font-semibold" style={{ color: '#1B2A4A' }}>{pubLabel}</h2>
         <div className="flex items-center gap-6 mt-2 text-xs" style={{ color: '#6B7280' }}>
           <span>Total individual stock: <strong style={{ color: '#1B2A4A' }}>{totalStock}</strong></span>
           <span>Editions with full set available: <strong style={{ color: '#1B2A4A' }}>{fullSetsAvail}</strong></span>
@@ -532,6 +641,9 @@ export default function BookManagement({ user }: Props) {
                 <th className="text-right px-4 py-2.5 text-xs font-medium uppercase tracking-wider" style={{ color: '#6B7280' }}>Per Vol</th>
                 <th className="text-center px-4 py-2.5 text-xs font-medium uppercase tracking-wider" style={{ color: '#6B7280' }} title="Full Set available = min(all volumes)">FS Stock</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium uppercase tracking-wider" style={{ color: '#6B7280' }}>Stock Status</th>
+                {isAdmin && (
+                  <th className="text-right px-4 py-2.5 text-xs font-medium uppercase tracking-wider" style={{ color: '#6B7280' }}>Actions</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -542,6 +654,14 @@ export default function BookManagement({ user }: Props) {
                   isAdmin={isAdmin}
                   defaultExpanded={false}
                   onEdited={refresh}
+                  onEdit={setEditingEdition}
+                  onDelete={ed => {
+                    if (confirm(`Delete edition "${ed.id}"? This removes ${ed.volumes.length} volume(s) and cannot be undone.`)) {
+                      deleteEditionDb(ed.id)
+                        .then(() => { refresh(); showToast('success', `Deleted edition "${ed.id}".`) })
+                        .catch(err => showToast('error', err instanceof Error ? err.message : 'Delete failed.'))
+                    }
+                  }}
                 />
               ))}
             </tbody>
@@ -554,6 +674,376 @@ export default function BookManagement({ user }: Props) {
           View-only. Contact an administrator to update stock quantities or edition details.
         </p>
       )}
+
+      {/* ── Toast ─────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-md shadow-lg text-sm font-medium"
+          style={{
+            backgroundColor: toast.kind === 'success' ? '#1E7E34' : toast.kind === 'error' ? '#B33A3A' : '#1B2A4A',
+            color: '#fff',
+            maxWidth: 480,
+          }}
+          role="status"
+        >
+          {toast.text}
+        </div>
+      )}
+
+      {/* ── Add / Edit Edition modal ─────────────────────────────────────── */}
+      {(showAddEdition || editingEdition) && (
+        <EditionFormModal
+          mode={editingEdition ? 'edit' : 'add'}
+          initial={editingEdition ?? null}
+          defaultPubType={pub}
+          defaultYear={currentYear}
+          onClose={() => { setShowAddEdition(false); setEditingEdition(null) }}
+          onSaved={() => {
+            setShowAddEdition(false)
+            setEditingEdition(null)
+            refresh()
+            showToast('success', editingEdition ? 'Edition updated.' : 'Edition added.')
+          }}
+          onError={msg => showToast('error', msg)}
+        />
+      )}
+
+      {/* ── Add Publication Type modal ───────────────────────────────────── */}
+      {showAddPubType && (
+        <AddPubTypeModal
+          onClose={() => setShowAddPubType(false)}
+          onAdded={() => { setShowAddPubType(false); refresh(); showToast('success', 'Publication type added.') }}
+          onError={msg => showToast('error', msg)}
+        />
+      )}
+
+      {/* ── Manage Publication Types modal ───────────────────────────────── */}
+      {showManagePubTypes && (
+        <ManagePubTypesModal
+          rows={pubTypeRows}
+          onClose={() => setShowManagePubTypes(false)}
+          onRefresh={async () => { setPubTypeRows(await listPubTypes()); refresh() }}
+          onError={msg => showToast('error', msg)}
+          onInfo={msg => showToast('info', msg)}
+        />
+      )}
     </div>
+  )
+}
+
+// ── Add / Edit Edition modal ──────────────────────────────────────────────────
+// One modal handles both add and edit. The "id" field is only editable in
+// add mode (it's the primary key, so it can't be changed after creation).
+function EditionFormModal({
+  mode, initial, defaultPubType, defaultYear, onClose, onSaved, onError,
+}: {
+  mode: 'add' | 'edit'
+  initial: Edition | null
+  defaultPubType: string
+  defaultYear: number
+  onClose: () => void
+  onSaved: () => void
+  onError: (msg: string) => void
+}) {
+  const [form, setForm] = useState(() => initial
+    ? {
+        id: initial.id,
+        pubType: initial.pubType,
+        category: initial.category,
+        year: initial.year,
+        periodLabel: initial.periodLabel,
+        volumeCount: initial.volumeCount,
+        fullSetPrice: initial.fullSetPrice,
+        pricePerVolume: initial.pricePerVolume,
+        notes: initial.notes ?? '',
+      }
+    : {
+        id: `${defaultPubType}-${defaultYear}`,
+        pubType: defaultPubType,
+        category: 'Annual' as BoundCategory,
+        year: defaultYear,
+        periodLabel: String(defaultYear),
+        volumeCount: 1,
+        fullSetPrice: 0,
+        pricePerVolume: 0,
+        notes: '',
+      })
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    if (mode === 'add') {
+      if (!form.id.trim() || !form.periodLabel.trim()) {
+        onError('Edition id and period label are required.')
+        return
+      }
+      setSaving(true)
+      try {
+        await addEditionDb({
+          id: form.id.trim(),
+          pubType: form.pubType,
+          category: form.category,
+          year: form.year,
+          periodLabel: form.periodLabel.trim(),
+          volumeCount: form.volumeCount,
+          fullSetPrice: form.fullSetPrice,
+          pricePerVolume: form.pricePerVolume,
+          notes: form.notes.trim() || undefined,
+        } as NewEditionArgs)
+        onSaved()
+      } catch (err) {
+        onError(err instanceof Error ? err.message : 'Could not add edition.')
+      } finally {
+        setSaving(false)
+      }
+    } else if (initial) {
+      setSaving(true)
+      try {
+        await updateEditionDb(initial.id, {
+          year: form.year,
+          periodLabel: form.periodLabel.trim(),
+          fullSetPrice: form.fullSetPrice,
+          pricePerVolume: form.pricePerVolume,
+          notes: form.notes.trim() || null,
+        })
+        onSaved()
+      } catch (err) {
+        onError(err instanceof Error ? err.message : 'Could not update edition.')
+      } finally {
+        setSaving(false)
+      }
+    }
+  }
+
+  const pubOptions = Object.keys(PUB_LABELS).sort().map(c => ({ value: c, label: `${c} — ${PUB_LABELS[c]}` }))
+
+  return (
+    <Modal title={mode === 'add' ? 'Add Edition' : `Edit Edition · ${initial?.id}`} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-4">
+        <FormField label="Edition ID" required>
+          <Input
+            value={form.id}
+            onChange={v => setForm({ ...form, id: v })}
+            disabled={mode === 'edit'}
+            placeholder="e.g. MLRA-2027"
+          />
+        </FormField>
+        <FormField label="Publication Type" required>
+          <Select
+            value={form.pubType}
+            onChange={v => setForm({ ...form, pubType: v })}
+            options={pubOptions}
+            disabled={mode === 'edit'}
+          />
+        </FormField>
+        <FormField label="Category" required>
+          <Select
+            value={form.category}
+            onChange={v => setForm({ ...form, category: v as BoundCategory })}
+            options={['Annual', 'Selected Cases', 'Consolidated Index'].map(c => ({ value: c, label: c }))}
+            disabled={mode === 'edit'}
+          />
+        </FormField>
+        <FormField label="Year" required>
+          <Input
+            value={String(form.year)}
+            onChange={v => setForm({ ...form, year: parseInt(v) || 0 })}
+            type="number"
+            disabled={mode === 'edit'}
+          />
+        </FormField>
+        <FormField label="Period Label" required>
+          <Input
+            value={form.periodLabel}
+            onChange={v => setForm({ ...form, periodLabel: v })}
+            placeholder="e.g. 2027 or 2026–2027"
+            disabled={mode === 'edit'}
+          />
+        </FormField>
+        <FormField label="Number of Volumes" required>
+          <Input
+            value={String(form.volumeCount)}
+            onChange={v => setForm({ ...form, volumeCount: Math.max(1, parseInt(v) || 1) })}
+            type="number"
+            disabled={mode === 'edit'}
+          />
+        </FormField>
+        <FormField label="Full Set Price (RM)">
+          <Input
+            value={String(form.fullSetPrice)}
+            onChange={v => setForm({ ...form, fullSetPrice: parseFloat(v) || 0 })}
+            type="number"
+          />
+        </FormField>
+        <FormField label="Price per Volume (RM)">
+          <Input
+            value={String(form.pricePerVolume)}
+            onChange={v => setForm({ ...form, pricePerVolume: parseFloat(v) || 0 })}
+            type="number"
+          />
+        </FormField>
+        <div className="col-span-2">
+          <FormField label="Notes (optional)">
+            <Input
+              value={form.notes}
+              onChange={v => setForm({ ...form, notes: v })}
+              placeholder="e.g. 2-volume edition (2021 onward)"
+            />
+          </FormField>
+        </div>
+      </div>
+      {mode === 'add' && (
+        <p className="text-xs mt-3" style={{ color: '#9CA3AF' }}>
+          The new edition will start with every volume at 0 stock. Edit stock
+          from the row after saving.
+        </p>
+      )}
+      <div className="flex justify-end gap-3 mt-6">
+        <button onClick={onClose} className="px-4 py-2 text-sm rounded-md"
+          style={{ border: '1px solid #E5E3DE', color: '#6B7280' }}>Cancel</button>
+        <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-md font-medium disabled:opacity-60"
+          style={{ backgroundColor: '#1B2A4A', color: '#fff' }}>
+          {saving ? 'Saving…' : mode === 'add' ? 'Add Edition' : 'Save Changes'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Add Publication Type modal ────────────────────────────────────────────────
+// Lets the admin introduce a new publication code + label. Code is
+// uppercased and validated; label can be anything. Once added, the new
+// type appears in the publication tabs and in every Create Invoice / DO
+// dropdown that reads from PUB_LABELS.
+function AddPubTypeModal({
+  onClose, onAdded, onError,
+}: { onClose: () => void; onAdded: () => void; onError: (msg: string) => void }) {
+  const [code, setCode] = useState('')
+  const [label, setLabel] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    setSaving(true)
+    try {
+      await addPubTypeDb(code, label)
+      onAdded()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not add publication type.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal title="New Publication Type" onClose={onClose}>
+      <p className="text-xs mb-4" style={{ color: '#6B7280' }}>
+        Adds a new code (2–8 letters/numbers) and display label. Once saved,
+        the new type will appear in the Book Management tabs and in every
+        Create Invoice / Delivery Order dropdown.
+      </p>
+      <div className="grid grid-cols-1 gap-4">
+        <FormField label="Code" required>
+          <Input
+            value={code}
+            onChange={v => setCode(v.toUpperCase())}
+            placeholder="e.g. JLR"
+            maxLength={8}
+          />
+        </FormField>
+        <FormField label="Display Label" required>
+          <Input
+            value={label}
+            onChange={setLabel}
+            placeholder="e.g. Journal of Law Reports"
+          />
+        </FormField>
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <button onClick={onClose} className="px-4 py-2 text-sm rounded-md"
+          style={{ border: '1px solid #E5E3DE', color: '#6B7280' }}>Cancel</button>
+        <button onClick={submit} disabled={saving || !code.trim() || !label.trim()}
+          className="px-4 py-2 text-sm rounded-md font-medium disabled:opacity-60"
+          style={{ backgroundColor: '#1B2A4A', color: '#fff' }}>
+          {saving ? 'Adding…' : 'Add Publication Type'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Manage Publication Types modal ────────────────────────────────────────────
+// Lists every type in the registry. Each row has a delete button that's
+// disabled with a tooltip when the type still has any editions left — the
+// deleteEditionDb helpers check that, so the admin sees a clear "delete
+// the editions first" message if they try.
+function ManagePubTypesModal({
+  rows, onClose, onRefresh, onError, onInfo,
+}: {
+  rows: PubTypeRow[]
+  onClose: () => void
+  onRefresh: () => Promise<void>
+  onError: (msg: string) => void
+  onInfo: (msg: string) => void
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const handleDelete = async (code: string) => {
+    if (!confirm(`Delete publication type "${code}"? The registry row is removed; the editions remain in the DB but will be hidden from the UI until the type is re-added.`)) return
+    setBusy(code)
+    try {
+      await deletePubTypeDb(code)
+      await onRefresh()
+      onInfo(`Removed "${code}" from the registry.`)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Delete failed.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // Check how many editions each type has, in-memory (cheap — we already
+  // have allEditions loaded). Used to enable/disable the delete button.
+  const countFor = (code: string) => allEditions.filter(e => e.pubType === code).length
+
+  return (
+    <Modal title="Manage Publication Types" onClose={onClose}>
+      <p className="text-xs mb-4" style={{ color: '#6B7280' }}>
+        Delete a type only if it has no editions left. Otherwise, remove
+        its editions in Book Management first.
+      </p>
+      <div className="space-y-2 max-h-80 overflow-y-auto">
+        {rows.map(r => {
+          const count = countFor(r.code)
+          const canDelete = count === 0
+          return (
+            <div key={r.code} className="flex items-center justify-between px-3 py-2 rounded"
+              style={{ backgroundColor: '#FAFAF8', border: '1px solid #F0EEE9' }}>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold" style={{ color: '#1B2A4A' }}>{r.code}</div>
+                <div className="text-xs truncate" style={{ color: '#6B7280' }}>{r.label}</div>
+              </div>
+              <span className="text-xs mr-3" style={{ color: count === 0 ? '#9CA3AF' : '#B8935F' }}>
+                {count} edition{count === 1 ? '' : 's'}
+              </span>
+              <button
+                onClick={() => handleDelete(r.code)}
+                disabled={!canDelete || busy === r.code}
+                title={canDelete ? `Delete "${r.code}"` : `Cannot delete — ${count} edition(s) still reference this type`}
+                className="p-1.5 rounded transition-colors disabled:opacity-30"
+                style={{ color: '#B8935F' }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          )
+        })}
+        {rows.length === 0 && (
+          <p className="text-xs text-center py-6" style={{ color: '#9CA3AF' }}>No publication types found.</p>
+        )}
+      </div>
+      <div className="flex justify-end mt-6">
+        <button onClick={onClose} className="px-4 py-2 text-sm rounded-md"
+          style={{ border: '1px solid #E5E3DE', color: '#6B7280' }}>Close</button>
+      </div>
+    </Modal>
   )
 }

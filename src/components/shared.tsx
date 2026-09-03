@@ -208,8 +208,9 @@ export function FormField({ label, children, required }: { label: string; childr
   )
 }
 
-export function Input({ value, onChange, placeholder, type = 'text' }: {
+export function Input({ value, onChange, placeholder, type = 'text', disabled = false, maxLength }: {
   value: string; onChange: (v: string) => void; placeholder?: string; type?: string
+  disabled?: boolean; maxLength?: number
 }) {
   return (
     <input
@@ -217,7 +218,9 @@ export function Input({ value, onChange, placeholder, type = 'text' }: {
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full px-3 py-2 text-sm rounded-md outline-none"
+      disabled={disabled}
+      maxLength={maxLength}
+      className="w-full px-3 py-2 text-sm rounded-md outline-none disabled:opacity-60 disabled:cursor-not-allowed"
       style={{ border: '1px solid #E5E3DE', color: '#2E2E2E', backgroundColor: '#FAFAF8' }}
       onFocus={e => e.currentTarget.style.borderColor = '#1B2A4A'}
       onBlur={e => e.currentTarget.style.borderColor = '#E5E3DE'}
@@ -292,14 +295,16 @@ export function CustomerSearchDropdown({ value, onChange }: { value: string; onC
   )
 }
 
-export function Select({ value, onChange, options, placeholder }: {
+export function Select({ value, onChange, options, placeholder, disabled = false }: {
   value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder?: string
+  disabled?: boolean
 }) {
   return (
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="w-full px-3 py-2 text-sm rounded-md outline-none"
+      disabled={disabled}
+      className="w-full px-3 py-2 text-sm rounded-md outline-none disabled:opacity-60 disabled:cursor-not-allowed"
       style={{ border: '1px solid #E5E3DE', color: value ? '#2E2E2E' : '#9CA3AF', backgroundColor: '#FAFAF8' }}
       onFocus={e => e.currentTarget.style.borderColor = '#1B2A4A'}
       onBlur={e => e.currentTarget.style.borderColor = '#E5E3DE'}

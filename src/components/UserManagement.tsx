@@ -119,7 +119,7 @@ export default function UserManagement({ user }: Props) {
         ) : loadErr ? (
           <p className="text-sm px-5 py-6" style={{ color: '#C0392B' }}>Couldn't load users: {loadErr}</p>
         ) : (
-          <Table columns={['Name', 'Email', 'Role', 'Status', 'Created', 'Actions']}>
+          <Table columns={['Name', 'Email', 'Department', 'Role', 'Status', 'Created', 'Actions']}>
             {users.map(u => (
               <Tr key={u.id}>
                 <Td>
@@ -132,6 +132,11 @@ export default function UserManagement({ user }: Props) {
                   </div>
                 </Td>
                 <Td><span className="text-sm" style={{ color: '#6B7280' }}>{u.email}</span></Td>
+                <Td>
+                  <span className="text-sm" style={{ color: u.department ? '#2E2E2E' : '#9CA3AF' }}>
+                    {u.department || '—'}
+                  </span>
+                </Td>
                 <Td>
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded"
                     style={{

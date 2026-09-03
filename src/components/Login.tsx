@@ -110,9 +110,6 @@ export default function Login({ onLogin }: Props) {
             </button>
           </form>
 
-          <p className="mt-6 text-xs text-center" style={{ color: '#9CA3AF' }}>
-            Demo: admin@legalreview.com.my / admin123
-          </p>
         </div>
       </div>
     </div>

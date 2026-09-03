@@ -324,7 +324,7 @@ export default function EditInvoice({ user, navigate, id }: Props) {
                 <div key={i} className="grid gap-2 items-start"
                   style={{ gridTemplateColumns: '2fr 1fr 1fr 0.7fr 1fr 1fr 40px' }}>
                   <Select value={item.pub} onChange={v => updateItem(i, 'pub', v)}
-                    options={withCurrentOption(PUBLICATIONS, item.pub)} />
+                    options={withCurrentOption(PUBLICATIONS(), item.pub)} />
                   {/* years options pulled live from Book Management (allEditions) for this publication */}
                   <Select value={item.years} onChange={v => updateItem(i, 'years', v)}
                     options={withCurrentOption(

@@ -1,6 +1,11 @@
 import { PUB_LABELS } from '../data/publicationData'
 
-export const PUBS = Object.entries(PUB_LABELS).map(([value, label]) => ({ value, label }))
+// Recomputed on every call so a publication type added in Book Management
+// shows up immediately in the Create/Edit Delivery Order dropdown without
+// a reload. See the matching note on PUBLICATIONS in invoiceShared.tsx.
+export function PUBS(): { value: string; label: string }[] {
+  return Object.entries(PUB_LABELS).map(([value, label]) => ({ value, label }))
+}
 export const VOLUMES = ['Volume 1', 'Volume 2', 'Volume 3', 'Volume 4', 'Volume 5', 'Volume 6', 'Full Set'].map(v => ({ value: v, label: v }))
 
 // Guarantees a saved year/volume/publication always renders even if it
