@@ -12,7 +12,8 @@ import { COMPANY, EDITORIAL_BOARD, BRAND_BLUE } from '../data/companyInfo'
 //   - base: '/'              → BASE_URL is '/'      → '/legal-review-logo.png'
 //   - base: '/some-prefix/'  → BASE_URL is '/some-prefix/'  → '/some-prefix/legal-review-logo.png'
 // BASE_URL always ends with '/', so the simple concatenation is safe.
-const productionLogoUrl = '/legal-review-logo.png'
+const productionLogoUrl = '/legal-review-logo-new.png'
+
 
 // The thick brand-blue bar across the very top of every printed document —
 // present on both the real invoice and delivery order templates, above the
