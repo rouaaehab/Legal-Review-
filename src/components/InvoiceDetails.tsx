@@ -3,6 +3,7 @@ import { Card, StatusBadge, GhostBtn, PrimaryBtn, AttachPdf } from './shared'
 import { DocumentLetterhead, DocumentTopBar } from './documentShared'
 import { invoices, deliveryOrders, getInvoiceStatus, customers } from '../data/sampleData'
 import { uploadInvoicePdf, openInvoicePdf, deleteInvoicePdf } from '../lib/db'
+import { groupParticulars } from './invoiceShared'
 import { ROLE_TITLE, formatRM, BRAND_BLUE } from '../data/companyInfo'
 import type { AppUser, Screen } from '../App'
 
@@ -93,14 +94,14 @@ export default function InvoiceDetails({ user, id, navigate }: Props) {
             </tr>
           </thead>
           <tbody>
-            {inv.items.map((item, i) => (
+            {groupParticulars(inv.items, it => it.total).map((item, i) => (
               <tr key={i}>
                 <td className="px-3 py-3 align-top" style={{ border: '1px solid #1B2A4A' }}>
                   <p className="font-bold" style={{ textDecoration: 'underline', color: '#1B2A4A' }}>{item.pub}</p>
                   <p className="mt-1" style={{ color: '#2E2E2E' }}>
-                    {item.pub}{item.pubCode ? ` (${item.pubCode})` : ''} – Bound Volumes ({item.years})
+                    {item.pub}{item.pubCode ? ` (${item.pubCode})` : ''} – Bound Volumes ({item.yearsLabel})
                   </p>
-                  <p style={{ color: '#2E2E2E' }}>{item.volumes}</p>
+                  <p style={{ color: '#2E2E2E' }}>{item.volumeCount} Volume{item.volumeCount === 1 ? '' : 's'}</p>
                 </td>
                 <td className="px-3 py-3 text-right align-middle font-medium" style={{ border: '1px solid #1B2A4A', color: '#1B2A4A' }}>
                   RM {formatRM(item.total)}

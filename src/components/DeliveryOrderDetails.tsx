@@ -3,6 +3,7 @@ import { Card, StatusBadge, GhostBtn, PrimaryBtn, AttachPdf } from './shared'
 import { DocumentLetterhead, DocumentTopBar } from './documentShared'
 import { deliveryOrders, invoices } from '../data/sampleData'
 import { uploadDeliveryOrderPdf, openDeliveryOrderPdf, deleteDeliveryOrderPdf } from '../lib/db'
+import { groupParticulars } from './invoiceShared'
 import { COMPANY, ROLE_TITLE, BRAND_BLUE } from '../data/companyInfo'
 import type { AppUser, Screen } from '../App'
 
@@ -16,10 +17,11 @@ export default function DeliveryOrderDetails({ user, id, navigate }: Props) {
   // Multi-item DOs (generated from a multi-line invoice) print one row per
   // item; a plain single-item DO falls back to its own publication/year/
   // volume/qty fields.
-  const rows = d.items && d.items.length > 0
+  const rawRows = d.items && d.items.length > 0
     ? d.items
     : [{ pub: d.publication, years: d.year, volumes: d.volume, qty: d.qty }]
-  const totalQty = rows.reduce((s, r) => s + r.qty, 0)
+  const rows = groupParticulars(rawRows)
+  const totalQty = rows.reduce((s, r) => s + r.volumeCount, 0)
 
   const handlePrint = () => window.print()
 
@@ -113,10 +115,10 @@ export default function DeliveryOrderDetails({ user, id, navigate }: Props) {
               <tr key={i}>
                 <td className="px-3 py-2 align-top" style={{ border: '1px solid #1B2A4A', borderTop: 'none' }}>
                   <p className="font-bold" style={{ textDecoration: 'underline', color: '#1B2A4A' }}>{row.pub}</p>
-                  <p style={{ color: '#2E2E2E' }}>{row.years} {row.volumes.toUpperCase()}</p>
+                  <p style={{ color: '#2E2E2E' }}>Bound Volumes ({row.yearsLabel})</p>
                 </td>
                 <td className="px-3 py-2 text-center align-middle font-medium" style={{ border: '1px solid #1B2A4A', borderTop: 'none', color: '#1B2A4A' }}>
-                  {row.qty}
+                  {row.volumeCount}
                 </td>
               </tr>
             ))}

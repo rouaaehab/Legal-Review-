@@ -328,7 +328,7 @@ export default function EditInvoice({ user, navigate, id }: Props) {
                   {/* years options pulled live from Book Management (allEditions) for this publication */}
                   <Select value={item.years} onChange={v => updateItem(i, 'years', v)}
                     options={withCurrentOption(
-                      allEditions.filter(e => e.pubType === (item.pub as any)).map(e => ({ value: String(e.periodLabel), label: String(e.periodLabel) })),
+                      allEditions.filter(e => e.pubType === (item.pub as any)).sort((a, b) => a.year - b.year).map(e => ({ value: String(e.periodLabel), label: String(e.periodLabel) })),
                       item.years
                     )} />
                   <Select value={item.volumes} onChange={v => updateItem(i, 'volumes', v)}

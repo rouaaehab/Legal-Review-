@@ -264,7 +264,7 @@ export default function CreateInvoice({ user, navigate }: Props) {
                   {/* years options pulled live from Book Management (allEditions) for this publication */}
                   <Select value={item.years} onChange={v => updateItem(i, 'years', v)}
                     placeholder="Year…"
-                    options={allEditions.filter(e => e.pubType === (item.pub as any)).map(e => ({ value: String(e.periodLabel), label: String(e.periodLabel) }))} />
+                    options={allEditions.filter(e => e.pubType === (item.pub as any)).sort((a, b) => a.year - b.year).map(e => ({ value: String(e.periodLabel), label: String(e.periodLabel) }))} />
                   <Select value={item.volumes} onChange={v => updateItem(i, 'volumes', v)}
                     placeholder="Volume…" options={VOLUMES_OPTS} />
                   <input type="number" value={item.qty} min={1}

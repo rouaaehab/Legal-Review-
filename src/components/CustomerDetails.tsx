@@ -96,7 +96,7 @@ function AddSubscriptionForm({ customerId, onDone }: { customerId: string; onDon
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [saving, setSaving] = useState(false)
 
-  const editionsForPub = allEditions.filter(e => e.pubType === pub)
+  const editionsForPub = allEditions.filter(e => e.pubType === pub).sort((a, b) => a.year - b.year)
   const chosenEdition = allEditions.find(e => e.id === editionId)
 
   const volumeScopeOptions = chosenEdition
@@ -172,7 +172,7 @@ function EditSubscriptionForm({ sub, onDone }: { sub: CustomerSubscription; onDo
   const [startDate, setStartDate] = useState(sub.startDate)
   const [saving, setSaving] = useState(false)
 
-  const editionsForPub = allEditions.filter(e => e.pubType === pub)
+  const editionsForPub = allEditions.filter(e => e.pubType === pub).sort((a, b) => a.year - b.year)
   const chosenEdition = allEditions.find(e => e.id === editionId)
 
   const volumeScopeOptions = chosenEdition

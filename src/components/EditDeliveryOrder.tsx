@@ -243,7 +243,7 @@ export default function EditDeliveryOrder({ navigate, id }: Props) {
                   <FormField label="Year">
                     <Select value={year} onChange={setYear}
                       options={withCurrentOption(
-                        allEditions.filter(e => e.pubType === (pub as any)).map(e => ({ value: String(e.periodLabel), label: String(e.periodLabel) })),
+                        allEditions.filter(e => e.pubType === (pub as any)).sort((a, b) => a.year - b.year).map(e => ({ value: String(e.periodLabel), label: String(e.periodLabel) })),
                         year
                       )} />
                   </FormField>

@@ -164,7 +164,7 @@ export default function CreateDeliveryOrder({ user, navigate }: Props) {
               </div>
               <FormField label="Year">
                 <Select value={year} onChange={setYear} placeholder="Year…"
-                  options={allEditions.filter(e => e.pubType === (pub as any)).map(e => ({ value: String(e.periodLabel), label: String(e.periodLabel) }))} />
+                  options={allEditions.filter(e => e.pubType === (pub as any)).sort((a, b) => a.year - b.year).map(e => ({ value: String(e.periodLabel), label: String(e.periodLabel) }))} />
               </FormField>
               <FormField label="Volume">
                 <Select value={volume} onChange={setVolume} placeholder="Volume…" options={VOLUMES} />

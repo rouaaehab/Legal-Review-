@@ -60,3 +60,80 @@ export function pubLabelToCode(label: string, pubCode?: string): string {
   return k ?? (Object.keys(PUB_LABELS).find(key => label.includes(PUB_LABELS[key as any])) ?? label)
 }
 
+// ── Particulars grouping (printed invoice / delivery order) ────────────────
+// Collapses line items that share the same publication but different years
+// into a single printed row — e.g. MLRA 2025 + MLRA 2026 becomes one
+// "MLRA – Bound Volumes (2025-2026)" line instead of two, so a multi-year
+// document still fits on one A4 page. This is purely a *display*
+// transformation for the printed/PDF layout: the underlying `items` array
+// (and each item's own saved price/qty) is never modified, so invoice line
+// items stay frozen individually exactly as before — only how they're
+// grouped for printing changes.
+export interface GroupableItem {
+  pub: string
+  pubCode?: string
+  years: string
+  volumes: string
+  qty: number
+}
+
+export interface GroupedParticular {
+  pub: string
+  pubCode?: string
+  yearsLabel: string
+  volumeCount: number
+  total: number
+}
+
+function extractYears(periodLabel: string): number[] {
+  const matches = periodLabel.match(/\d{4}/g)
+  return matches ? matches.map(Number) : []
+}
+
+// Total physical volumes one line item represents, from the edition's
+// volume count in Book Management — Full Set → that edition's volumeCount,
+// a single named volume → 1 — multiplied by the item's qty.
+function volumeCountFor(item: GroupableItem): number {
+  const code = item.pubCode ?? pubLabelToCode(item.pub)
+  const edition = allEditions.find(e => e.pubType === (code as any) && String(e.periodLabel) === String(item.years))
+  const perUnit = item.volumes && item.volumes.toLowerCase().includes('full')
+    ? (edition?.volumeCount ?? 1)
+    : 1
+  return perUnit * (item.qty || 1)
+}
+
+/**
+ * Groups items by publication (pubCode, falling back to pub label) in
+ * first-seen order. `totalOf` extracts the amount to sum per item — pass
+ * it for invoices (`it => it.total`); omit it for delivery orders, which
+ * have no price.
+ */
+export function groupParticulars<T extends GroupableItem>(
+  items: T[],
+  totalOf: (item: T) => number = () => 0,
+): GroupedParticular[] {
+  const order: string[] = []
+  const groups = new Map<string, T[]>()
+  for (const it of items) {
+    const key = it.pubCode ?? it.pub
+    if (!groups.has(key)) { groups.set(key, []); order.push(key) }
+    groups.get(key)!.push(it)
+  }
+  return order.map(key => {
+    const groupItems = groups.get(key)!
+    const years = groupItems.flatMap(i => extractYears(i.years))
+    const yearsLabel = years.length === 0
+      ? groupItems[0].years
+      : Math.min(...years) === Math.max(...years)
+        ? String(Math.min(...years))
+        : `${Math.min(...years)}-${Math.max(...years)}`
+    return {
+      pub: groupItems[0].pub,
+      pubCode: groupItems[0].pubCode,
+      yearsLabel,
+      volumeCount: groupItems.reduce((s, i) => s + volumeCountFor(i), 0),
+      total: groupItems.reduce((s, i) => s + totalOf(i), 0),
+    }
+  })
+}
+

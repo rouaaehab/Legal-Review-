@@ -119,9 +119,18 @@ export default function App() {
 
     const channel = supabase.channel('book-data-realtime')
     for (const table of ['pub_types', 'editions', 'volumes', 'customers', 'invoices', 'delivery_order_items']) {
-      channel.on('postgres_changes', { event: '*', schema: 'public', table }, scheduleRefresh)
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+        // TEMP DIAGNOSTIC — remove once realtime sync is confirmed working.
+        // eslint-disable-next-line no-console
+        console.info('%c[realtime] change received', 'color:#16a34a;font-weight:bold', table, payload.eventType)
+        scheduleRefresh()
+      })
     }
-    channel.subscribe()
+    channel.subscribe((status, err) => {
+      // TEMP DIAGNOSTIC — remove once realtime sync is confirmed working.
+      // eslint-disable-next-line no-console
+      console.info('%c[realtime] channel status', 'color:#2563eb;font-weight:bold', status, err ?? '')
+    })
 
     return () => {
       disposed = true
