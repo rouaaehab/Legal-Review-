@@ -11,3 +11,9 @@ logs/
 *.log
 .claude-replay.*
 .tmp-*
+.claude/
+.agents/
+CLAUDE.md
+AGENTS.md
+skills-lock.json
+.mise.toml
