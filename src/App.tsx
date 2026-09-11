@@ -16,8 +16,8 @@ import DeliveryOrderDetails from './components/DeliveryOrderDetails'
 import Reports from './components/Reports'
 import Settings from './components/Settings'
 import UserManagement from './components/UserManagement'
-import { supabaseConfigured } from './lib/supabaseClient'
-import { loadAllData } from './lib/db'
+import { supabase, supabaseConfigured } from './lib/supabaseClient'
+import { loadAllData, refreshRealtimeData } from './lib/db'
 
 export type UserRole = 'admin' | 'employee'
 export type Screen =
@@ -56,6 +56,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('login')
   const [user, setUser] = useState<AppUser | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [, setDataRevision] = useState(0)
 
   const fetchData = () => {
     setLoadState('loading')
@@ -74,6 +75,60 @@ export default function App() {
   useEffect(() => {
     if (supabaseConfigured) fetchData()
   }, [])
+
+  useEffect(() => {
+    if (!supabaseConfigured || loadState !== 'ready') return
+
+    let disposed = false
+    let refreshInFlight = false
+    let refreshPending = false
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined
+
+    const runRefresh = async () => {
+      if (disposed) return
+      if (refreshInFlight) {
+        refreshPending = true
+        return
+      }
+
+      refreshInFlight = true
+      try {
+        await refreshRealtimeData()
+        if (!disposed) setDataRevision(revision => revision + 1)
+      } catch (err) {
+        // Realtime is supplemental; keep the current in-memory data on a
+        // transient refresh failure and let the next event retry it.
+        // eslint-disable-next-line no-console
+        console.warn('[book-management] realtime refresh failed:', err)
+      } finally {
+        refreshInFlight = false
+        if (refreshPending && !disposed) {
+          refreshPending = false
+          scheduleRefresh()
+        }
+      }
+    }
+
+    const scheduleRefresh = () => {
+      if (debounceTimer !== undefined) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        debounceTimer = undefined
+        void runRefresh()
+      }, 150)
+    }
+
+    const channel = supabase.channel('book-data-realtime')
+    for (const table of ['pub_types', 'editions', 'volumes', 'customers', 'invoices', 'delivery_order_items']) {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, scheduleRefresh)
+    }
+    channel.subscribe()
+
+    return () => {
+      disposed = true
+      if (debounceTimer !== undefined) clearTimeout(debounceTimer)
+      void supabase.removeChannel(channel)
+    }
+  }, [loadState])
 
   // Always resolve the id explicitly — including clearing it back to null
   // when a screen is opened without one. Previously an omitted id left the
